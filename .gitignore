@@ -1,0 +1,31 @@
+# 系统与编辑器
+.DS_Store
+Thumbs.db
+desktop.ini
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.ipynb_checkpoints/
+
+# Node
+node_modules/
+
+# 环境变量与密钥
+.env
+.env.*
+*.key
+
+# 大文件（模型权重等，用 Git LFS 或外部存储）
+*.pt
+*.pth
+*.safetensors
+*.gguf
+*.ckpt
