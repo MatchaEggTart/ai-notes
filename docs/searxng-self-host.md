@@ -9,7 +9,7 @@
 
 ## 0. 先搞清楚数据流
 
-```
+```text
   Cherry Studio ────┐
   (设置里填 URL)     │
                     ├──▶  SearXNG  ──▶  Google / DuckDuckGo / Brave / ...
@@ -55,6 +55,7 @@ sudo pacman -S podman
 
 选 1（crun），直接回车就行（它本来就是默认值）。
 理由：
+
 - crun：C 写的轻量 OCI 运行时，Podman 的原生默认，rootless 支持和性能最好 —— 就是你要的。
 - runc：Docker 的遗留默认，能用但更重、启动略慢，没必要。
 - krun：基于 libkrun 的 microVM 隔离运行时，会给每个容器套一层轻量虚拟机，普通自建 SearXNG 用不上，反而更麻烦。
@@ -112,6 +113,7 @@ EOF
 ```
 
 > 两个必须记住的限制：
+>
 > 1. `.gitignore` **只对未跟踪的文件生效**。若某文件已经被 `git add` 过，加规则没用，
 >    得先 `git rm --cached`。所以顺序是「先写规则，再生成文件」。
 > 2. `git add -f` 会强行绕过规则 —— 别对 `searxng.env` 用它。
@@ -258,7 +260,7 @@ podman run -d \
 > 用了 `--network=host` 就**不要再加 `-p`**（会被忽略）。想保留网络隔离，可以改用
 > `--network=slirp4netns:allow_host_loopback=true`（需先 `pacman -S slirp4netns`）并把代理改成
 > `http://10.0.2.2:1080`；但多一个包、配置更绕，本机回环场景用 host 网络足够。
-
+>
 > **为什么一定要挂 `settings.yml`**：如果挂载的目录里没有这个文件，容器**不会报错**，
 > 而是自动从内置模板生成一份最小配置（并随机生成一个 `secret_key`）。但那份默认配置
 > **既不启用 Google、也不开 JSON**，客户端照样用不了——所以必须放上第 4 步那份。
@@ -452,12 +454,14 @@ opencode mcp list                 # 第一次可能显示 No MCP servers configu
 进 TUI 后也可以用 `/mcps` 查看连接状态、连接/断开服务器。
 
 > 如果 `npx` 方式一直超时：改成全局预装再指向绝对路径，避免每次冷启动。
-> ```bash
-> npm install -g mcp-searxng
-> ```
+
+```bash
+npm install -g mcp-searxng
+```
+
 > 然后把 `command` 换成全局 bin 的绝对路径（你的 nvm 前缀是 `~/.nvm/versions/node/v24.21.0/bin/mcp-searxng`）。
 > 注意：nvm 的路径带 Node 版本号，将来升级 Node 后要回来改。
-
+>
 > **opencode 不会在 SearXNG 和别的服务商之间自动故障转移。** 内置 `websearch` 的「自动换一家」只在它
 > 自带的 4 家（Exa / Firecrawl / Parallel / Tavily）之间、且**只在 HTTP 429 限流时**触发，它压根不知道
 > SearXNG 的存在。SearXNG 只是一个普通 MCP 工具，失败时 opencode 不会去调别的搜索服务商。
