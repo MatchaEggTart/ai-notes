@@ -316,6 +316,11 @@ podman rm -f searxng
 
 新建 `~/.config/containers/systemd/searxng.container`：
 
+```bash
+mkdir ~/.config/containers/systemd
+touch ~/.config/containers/systemd/searxng.container
+```
+
 ```ini
 [Quadlet]
 DefaultDependencies=false
