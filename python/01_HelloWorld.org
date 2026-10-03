@@ -1,0 +1,6 @@
+#+title: HelloWorld
+#+date: <2026-10-04 Sun>
+#+author: MatchaEggTart
+#+email: matchaeggtart@hotmail.com
+
+
