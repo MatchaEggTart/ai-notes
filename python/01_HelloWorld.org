@@ -3,4 +3,49 @@
 #+author: MatchaEggTart
 #+email: matchaeggtart@hotmail.com
 
+* Hello, World
 
+
+** 默认的交互式环境
+
+*** HOW
+
+#+begin_src python
+>>> print("Hello, World")
+Hello, World
+>>> quit()
+#+end_src
+
+
+** 文本编译
+
+*** HOW
+
+helloWorld.py
+
+#+begin_src python
+print("Hello, World")
+print("Goodbye, World")
+#+end_src
+
+
+** 注释(comment)
+
+*** HOW
+
+- 单行注释：以#和空格开头，可以注释掉从#开始后面一整行的内容
+
+- 多行注释：三个引号（通常用双引号）开头，三个引号结尾，通常用于添加多行说明性内容
+
+ comment.py
+  
+#+begin_src python
+"""
+第一个Python程序 - hello, world
+
+Version: 1.0
+Author: MatchaEggTart
+"""
+# print('hello, world')
+print("你好，世界！")
+#+end_src

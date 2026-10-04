@@ -3,9 +3,12 @@
 #+author: MatchaEggTart
 #+email: matchaeggtart@hotmail.com
 
-* pip
+* Environment
 
-** WHAT
+
+** pip
+
+*** WHAT
 
 pip 是 Python 的包管理工具，用来装三方库和三方工具。
 
@@ -15,14 +18,15 @@ externally-managed（PEP 668）。直接 pip install 会装进 /usr，和 pacman
 
 （本机现状：python 3.14.7，python-pip 未安装，`python3 -m pip` 会报 No module named pip。）
 
-** HOW
+*** HOW
 
 别往系统里装：命令行工具用 pipx（见下），项目依赖用 venv / uv。
 真要系统 pip：`sudo pacman -S python-pip`。
 
-* pipx
 
-** WHAT
+** pipx
+
+*** WHAT
 
 pipx 是 Arch 社区广泛推荐的方案：
 - 每个应用一个独立 venv，互不干扰
@@ -32,9 +36,9 @@ pipx 是 Arch 社区广泛推荐的方案：
 
 定位：装命令行工具（ruff、pylsp…）；项目依赖别用 pipx。
 
-** HOW
+*** HOW
 
-*** 安装
+**** 安装
 
 #+begin_src shell
 sudo pacman -S python-pipx
@@ -42,7 +46,7 @@ pipx ensurepath          # 把 ~/.local/bin 写进 PATH
 # sudo pipx ensurepath --global   # 全局安装时用
 #+end_src
 
-*** 镜像
+**** 镜像
 
 path: $HOME/.config/pip/pip.conf
 
@@ -53,7 +57,7 @@ index-url = https://pypi.tuna.tsinghua.edu.cn/simple/
 
 pipx 内部也是用 pip 装的，会读这份全局配置，所以命令里通常不用再写 -i。
 
-*** 命令
+**** 命令
 
 #+begin_src shell
 pipx install 包            # pipx install ruff
@@ -65,15 +69,16 @@ pipx run 包                # 不安装，临时跑（写脚本时好用）
 pipx runpip 包 pip install ...   # 在某个 venv 里跑 pip
 #+end_src
 
-* python-ts-mode + eglot
 
-** WHAT
+** python-ts-mode + eglot
+
+*** WHAT
 
 python-ts-mode 是 Emacs 29 起内置的 tree-sitter 模式，本机 Emacs 31.1，不用额外装。
 
-** HOW
+*** HOW
 
-*** 语言服务器 pylsp
+**** 语言服务器 pylsp
 
 eglot（Emacs 内置）连 pylsp。两种装法，推荐 pacman——跟系统包统一，少一个 venv。
 
@@ -85,23 +90,29 @@ sudo pacman -S python-lsp-server
 pipx install python-lsp-server
 #+end_src
 
+
 ** 格式化 / lint：ruff
 
-#+begin_src shell
+*** WHAT
+
+*** HOW
+
+#+begin_src 
 pipx install ruff
 ruff format .      # 格式化
 ruff check .       # lint
 #+end_src
 
-* uv
 
-** WHAT
+** uv
+
+*** WHAT
 
 uv 是现在主流的 Python 包 / 项目管理器，一个工具顶 pip + pipx + venv + pyenv：
 
-** HOW
+*** HOW
 
-*** 安装
+**** 安装
 
 #+begin_src shell
 sudo pacman -S uv
