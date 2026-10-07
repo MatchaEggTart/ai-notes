@@ -91,9 +91,10 @@ podman rmi hello-world
 
 | 文件 | 角色 | 进 Dotfiles？ |
 | --- | --- | --- |
-| `~/Dotfiles/matchaeggtart/config/searxng/settings.yml`（stow 后即 `~/.config/searxng/settings.yml`） | 实例配置（开 Google、开 JSON） | 是 |
+| `~/Dotfiles/matchaeggtart/config/searxng/settings.yml`（stow 后即 `~/.config/searxng/settings.yml`） | 实例配置（开 `google` + `bing`、开 JSON） | 是 |
 | `~/Dotfiles/matchaeggtart/config/searxng/limiter.toml` | 空的占位文件，只为消除警告 | 是 |
 | `~/Dotfiles/matchaeggtart/config/searxng/searxng.env` | `SEARXNG_SECRET` / `FORCE_OWNERSHIP=false` / 代理变量 | **否**（被 `.gitignore` 忽略） |
+| `~/Dotfiles/matchaeggtart/config/containers/systemd/searxng.container`（stow 后即 `~/.config/containers/systemd/searxng.container`） | Quadlet 服务定义，**第 7 步**才创建 | 是 |
 
 建目录（空目录 git 不跟踪，所以建完不会立刻出现在 `git status` 里）：
 
@@ -120,7 +121,7 @@ EOF
 
 ---
 
-## 4. 写配置：打开 Google + 打开 JSON
+## 4. 写配置：开引擎（Google + bing）+ 开 JSON
 
 新建 `~/Dotfiles/matchaeggtart/config/searxng/settings.yml`（stow 之后它同时也是 `~/.config/searxng/settings.yml`）：
 
@@ -149,10 +150,15 @@ server:
   image_proxy: false
   public_instance: false  # 不要开：那是给公开实例防滥用的
 
-# 默认配置里 google 引擎是 `disabled: true`。
+# 默认配置里 `google` 和 `bing` 都是 `disabled: true`。
 # 指定同一 name 时，SearXNG 会按 name 合并覆盖，所以这里只写需要改的字段。
 engines:
   - name: google
+    disabled: false
+  # 本机实测（2026-10）：google 的 /wml/search 端点被 Google 封了（恒 403，与出口无关）；
+  # brave/duckduckgo/qwant 是间歇性机器人判定。bing 是稳定可用的第二来源 ——
+  # 少了它，普通搜索就只剩 google cse 一个来源（见附录「哪些引擎真的出得来结果」）。
+  - name: bing
     disabled: false
 ```
 
@@ -165,8 +171,33 @@ engines:
 3. **`formats` 加 `json`**：不加的话 `/search?format=json` 直接返回 **403**，MCP 和 Cherry 全都会「能用但搜不出东西」。
 4. **`limiter: false`**：官方默认开启限流器，而限流器要连 valkey（Redis 系）。单机回环地址没必要，关掉就省掉一个容器。
 
-> 其他引擎：默认已经开着的就有 `duckduckgo`、`startpage`、`qwant`、`mojeek`、`brave`、`wikipedia`……
-> 只有 `google` 和 `bing` 是默认关闭的。想额外开 bing，照葫芦画瓢加一段 `- name: bing` / `disabled: false` 即可。
+> **引擎的"默认状态"分三档，别混为一谈**。下面这三档是本机用
+> `curl -s http://127.0.0.1:8080/config` 实测出来的，不是猜的：
+>
+> | 档位 | settings.yml 里 | 在 `/config` 里？ | `!bang` 能临时激活？ | 本机默认属于这档的 |
+> | --- | --- | --- | --- | --- |
+> | **启用** | 不写，或 `disabled: false` | 在，`enabled: true` | —— | `brave`、`duckduckgo`、`wikipedia`、`wikidata` |
+> | **注册但关闭** | `disabled: true` | 在，`enabled: false` | **能** | `google`、`bing`、`qwant` |
+> | **未注册** | `inactive: true` | **不在**（压根不存在） | **不能**，bang 被静默忽略 | `startpage`、`mojeek` |
+>
+> `inactive` 这档是个**静默陷阱**：引擎根本没注册，`!bang` 不会报错，而是被当成普通词丢掉 ——
+> 你会拿到**别的引擎**的结果，却以为那个引擎通了。本机实测：`!startpage` / `!mojeek` 都返回了
+> 20 条，但 JSON 里 `results[].engine` 全是 `google cse`。**所以怀疑任何一个 bang 之前，先看
+> `results[].engine` 到底是谁。**（默认 settings.yml 里 `inactive: true` 有 89 处。）
+>
+> 想额外开谁，照葫芦画瓢；两种档位要多写的东西不一样：
+>
+> ```yaml
+> engines:
+>   - name: bing        # 「注册但关闭」档：取消 disabled 即可
+>     disabled: false
+>   - name: startpage   # 「未注册」档：必须显式 inactive: false 才能进入注册流程
+>     inactive: false
+> ```
+>
+> 依据：`searx/settings_loader.py` 的 `update_dict(default_engine, user_engine)`（**你的字段覆盖默认的字段**），
+> 以及 `searx/engines/__init__.py` 的 `load_engines()` 会把 `inactive is True` 的条目直接跳过。
+> 改完务必用 `/config` 核对引擎真的进来了。
 
 同一目录再放一个空的 `limiter.toml`，纯粹为了消掉启动时那句
 `missing config file: /etc/searxng/limiter.toml` 警告：
@@ -277,7 +308,7 @@ ss -tlnp | grep 8080             # 应只看到 127.0.0.1:8080；绝不能是 0.
 
 ---
 
-## 6. 验证：网页 + JSON + Google
+## 6. 验证：网页 + JSON + 引擎健康度
 
 **a) 网页能开**：浏览器访问 <http://127.0.0.1:8080>，随便搜一下。
 
@@ -292,7 +323,7 @@ curl -sG 'http://127.0.0.1:8080/search' \
 
 看到 `"results": [ ... ]` 就对了。返回 **403** → `formats` 里没写 `json`，回第 4 步。
 
-**c) Google 引擎确实在工作**：用 bang 语法强制只走 Google（`!go` 是 google 引擎的 shortcut）：
+**c) 引擎健康度**：用 bang 语法强制只走某一家（`!go` 是 google 引擎的 shortcut）：
 
 ```bash
 curl -sG 'http://127.0.0.1:8080/search' \
@@ -301,7 +332,36 @@ curl -sG 'http://127.0.0.1:8080/search' \
   | python3 -c 'import sys,json;d=json.load(sys.stdin);[print(r["engine"],"|",r["title"][:70]) for r in d["results"][:5]]'
 ```
 
-输出的行首都是 `google` 就说明 Google 通了。如果为空或报错，见第 9 节排错。
+**看 `results[].engine`，别只看条数** —— `inactive` 引擎的 bang 会静默失效，条数再好看也是别的引擎给的（第 4 节）。
+
+> **⚠️ 但 `!go` 这一条不要当验收标准。** 本机实测（2026-10，镜像 `2026.10.4+d48c4b555`）：`!go`
+> 恒为 **0 条**、报 `access denied`。根因在**上游**：这版 `google` 引擎请求的是
+> `https://www.google.com/wml/search`（Nokia 功能机 WML 界面，见 `searx/engines/google.py` 的
+> `google_request()`），而 Google 已经封了这个老端点。对照实验（**同一条代理、同一台机器**）证明
+> 这跟你的出口 IP 无关：
+>
+> ```bash
+> P=http://127.0.0.1:1080
+> # ① SearXNG 的打法：/wml/search + Nokia UA  → 403
+> curl -s -x $P -o /dev/null -w '%{http_code}\n' \
+>   -A 'Nokia6230/2.0 (05.50) Profile/MIDP-2.0 Configuration/CLDC-1.1' \
+>   'https://www.google.com/wml/search?q=test'
+> # ② 浏览器的打法：/search + Chrome UA      → 200（说明 IP 正常的很）
+> curl -s -x $P -o /dev/null -w '%{http_code}\n' \
+>   -A 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36' \
+>   'https://www.google.com/search?q=test'
+> # ③ 换个头再打同样的端点              → 还是 403（判别因素是端点，不是 UA）
+> ```
+>
+> 所以**实例是否健康，看这两样**：`results` 不为空 + `unresponsive_engines` 清单：
+>
+> ```bash
+> curl -sG 'http://127.0.0.1:8080/search' --data-urlencode 'q=test' --data-urlencode 'format=json' \
+>  | python3 -c 'import sys,json;d=json.load(sys.stdin);print("结果数:",len(d["results"]));print("掉线引擎:",d.get("unresponsive_engines"))'
+> ```
+>
+> 有结果 + 有掉线引擎 = 正常；0 结果且全是 timeout = 代理没通。
+> （刚 `restart` 完的**第一条**查询可能因为冷启动整批 timeout —— 再查一次再下结论。）
 
 ---
 
@@ -310,18 +370,54 @@ curl -sG 'http://127.0.0.1:8080/search' \
 上一步的 `--restart unless-stopped` 在 rootless 下**只在容器被 systemd 托管时才真正生效**。
 Arch 上现在的最佳实践是 **Podman Quadlet**：写一个 `.container` 文件，systemd 自动生成服务单元。
 
-先删掉第 5 步手动跑的容器：
+> **前置条件：镜像必须先在本机（实测踩过）。** Quadlet 生成的 unit 是由 **systemd 用户管理器**
+> 拉起 podman 的，那个上下文里**没有**你 shell 里的 `HTTP(S)_PROXY` —— 代理是桌面会话注入的，
+> `systemctl --user show-environment` 里根本看不到它（`loginctl enable-linger` 后更是开机就起，
+> 永远拿不到）。而本机对 `registry-1.docker.io` 的 DNS 是被污染的（解析成 `108.160.163.102`、
+> `162.125.32.13` 这类假地址，直连必然超时）。两件事叠加，如果本地还没有镜像，第一次
+> `systemctl --user start` 就会去直连 Docker Hub 拉取 → 卡约 30 秒 → 失败 → 因为 `Restart=always`
+> 进入**无限重启**：`status` 永远停在 `activating`，restart counter 一路往上涨。
+>
+> 所以**先在一个带代理的 shell 里把镜像拉下来**（Quadlet 的 pull policy 默认是 `missing`，
+> 镜像在手就不会再拉）：
+>
+> ```bash
+> podman pull docker.io/searxng/searxng:latest   # 必须在这个带 HTTP(S)_PROXY 的交互式 shell 里跑
+> podman images                                   # 确认能看到 searxng/searxng
+> ```
+>
+> **就算你跳过了第 5 步，这一步也不能省** —— 第 5 步的价值不只是"验证能不能跑"，它同时是全程
+> 唯一一次在带代理的上下文里拉镜像。拉完之后先 `systemctl --user reset-failed searxng.service`
+> 清掉失败计数，再往下走。
+
+先删掉第 5 步手动跑的容器（没跑过第 5 步的话这句会报 `no container with name or ID "searxng" found`，无害）：
 
 ```bash
 podman rm -f searxng
 ```
 
-新建 `~/.config/containers/systemd/searxng.container`：
+新建 `~/.config/containers/systemd/searxng.container`。**但它和前面那些配置一样，放进 Dotfiles 更省事** ——
+否则换机重装时这一步是"手工重敲"，而且它不在版本控制里，跟其它东西不对称：
 
 ```bash
-mkdir ~/.config/containers/systemd
-touch ~/.config/containers/systemd/searxng.container
+mkdir -p "$HOME/Dotfiles/matchaeggtart/config/containers/systemd"
+$EDITOR "$HOME/Dotfiles/matchaeggtart/config/containers/systemd/searxng.container"
 ```
+
+写完把 `config` 包重跑一次 stow，让它被纳入：
+
+```bash
+cd "$HOME/Dotfiles/matchaeggtart"
+stow --target="$HOME/.config" config
+readlink -f "$HOME/.config/containers/systemd/searxng.container"   # 应指向 Dotfiles 里那个文件
+```
+
+> 上面这条 stow 会把 `~/.config/containers/systemd` 做成**软链**指向 Dotfiles。不用担心 ——
+> Quadlet 生成器**能穿过软链**读 `.container`（实测：`daemon-reload` 后 `systemctl --user cat searxng.service`
+> 第一条仍是 `# Automatically generated by /usr/lib/systemd/user-generators/podman-user-generator`）。
+> 但要注意 `~/.config/containers/` 同时也是 podman 放自己的 `containers.conf` 等文件的地方，
+> 所以**不要**拿 `rm -rf ~/.config/containers` 去清 —— 要清就清 `~/.config/containers/systemd` 这一层
+> （`01_run_stow.sh` 里加的就是这一层）。
 
 ```ini
 [Quadlet]
@@ -498,18 +594,21 @@ npm install -g mcp-searxng
 | 现象 | 原因 / 处理 |
 | --- | --- |
 | 容器反复重启，日志 `server.secret_key is not changed` | `searxng.env` 格式错（缺少 `SEARXNG_SECRET=` 前缀，或值不是 64 位 hex）。自检：`head -c 15 ~/.config/searxng/searxng.env` 应输出 `SEARXNG_SECRET=` |
+| 服务一直 `activating`、无限重启，日志 `Trying to pull ... registry-1.docker.io: ... i/o timeout` 或 `connection refused` | 本机 DNS 把 `registry-1.docker.io` 污染成了假 IP，而 Quadlet 由 systemd 用户管理器拉 podman，那儿**没有**你 shell 的代理 → 拉不动镜像。处理：在一个带 `HTTP(S)_PROXY` 的 shell 里 `podman pull docker.io/searxng/searxng:latest`，然后 `systemctl --user reset-failed searxng.service` 再 restart（见第 7 步） |
 | 改 dotfiles 里的 `settings.yml` 报 `Permission denied`，`ls -ln` 看到属主是 `100976` 之类 | `FORCE_OWNERSHIP` 把文件 chown 成了 subuid。先加 `FORCE_OWNERSHIP=false`，再 `podman unshare chown -R 0:0 <该目录>` 抢回属主 |
 | 日志刷 `Failed to connect ... over proxy 127.0.0.1`（手动 `podman run` 场景） | 容器够不到宿主机的本地代理。改用 `--network=host` + `-e GRANIAN_HOST=127.0.0.1`（第 5 步） |
 | 服务正常、网页能开，但搜什么都 **0 结果**，日志里各引擎 `Timeout` | Quadlet 场景下容器没继承代理变量。把 `HTTP(S)_PROXY`/`NO_PROXY` 写进 `searxng.env`（第 4 步）后 `systemctl --user restart searxng.service` |
 | 日志 `ahmia: can't register engine` / `torch: can't register engine` | 这两个引擎要 Tor。用 `use_default_settings.engines.remove` 摘掉（第 4 步） |
 | 日志 `missing config file: /etc/searxng/limiter.toml` | 无害警告。放一个空的 `limiter.toml` 即可消除（第 4 步） |
+| 日志 `ERROR:searx.botdetection: X-Forwarded-For nor X-Real-IP header is set!` | 无害噪音，**不用管**。SearXNG 假设自己跑在反向代理后面，靠 `X-Forwarded-For` / `X-Real-IP` 头判断真实客户端 IP；你直连 `127.0.0.1:8080`，两个头都没有，它就报一声。`searx/webapp.py` 里 `app.wsgi_app = ProxyFix(app.wsgi_app)` 是**无条件**挂的，所以和 `limiter: false` 无关；代码会回退用 `REMOTE_ADDR`（= 127.0.0.1），且 `botdetection/_helpers.py` 里的 `log_error_only_once` 保证每个进程只打一次。日志级别 `LOG_LEVEL_PROD = logging.WARNING` 是硬编码的，没有配置项可关 |
 | 日志出现 `settings.yml does not exist, creating from template` | 没挂到你的 `settings.yml`（路径写错）。此时默认 JSON 是关的，按第 4 步补上并重启 |
 | 改了配置但不生效 | 忘重启：`podman restart searxng`；Quadlet 场景是先 `daemon-reload` 再 `restart`。改 `--env-file` 则必须 `podman rm -f` 后重建 |
 | `systemctl --user start searxng.service` 静默卡约 **90 秒** | Quadlet 隐式等待系统的 `network-online.target`，而本机没人拉它。在 `.container` 加 `[Quadlet] DefaultDependencies=false`（第 7 步） |
 | `systemctl --user start` 看起来永久卡住 | 它只是同步等待、不打印；`Ctrl+C` 不会取消 job。用 `systemctl --user status searxng.service` 和 `journalctl --user -u searxng.service -n 40` 看真实情况 |
 | `curl ... format=json` 返回 **403** | `search.formats` 没加 `json`（第 4 步） |
-| 网页能搜，但 `!go` 没结果 / 日志有 `CAPTCHA`、`Access denied` | Google 反爬。SearXNG 会临时封禁该引擎几分钟后重试；先确认出网正常；必要时给 `outgoing` 配代理 |
-| Google 一直不稳 | 正常现象，元搜索的意义就在这：`duckduckgo`/`startpage`/`brave` 等会同时返回。别只依赖 Google |
+| `!go` 恒为 0 条、`unresponsive_engines` 里 `google: access denied` | **上游 SearXNG 的问题，不是你的配置、也不是你的 IP**：这版 `google` 引擎走 `https://www.google.com/wml/search`（Nokia 功能机 WML 界面），Google 已封该端点。实测同一条代理下 `/wml/search` → 403、普通 `/search` → 200。配置层面无解 —— 等上游修（镜像 `latest` 现在就是最新的 `2026.10.4`，先 `podman pull` 试试有没有新版本），日常用 `google cse` 顶（第 6 节 c） |
+| `brave: too many requests` / `duckduckgo: CAPTCHA` / `qwant: CAPTCHA` | 这些是**客户端行为触发的机器人判定，不是 IP 被拉黑**：实测同一条出口用普通 HTTP 请求能从 DDG 拿到 **11 条真结果**（附录）。DDG 报的 `CAPTCHA` 是 DDG **自己的** `challenge-form` 图灵测试（`searx/engines/duckduckgo.py` 的 `is_ddg_captcha()` 就是找 `//form[@id='challenge-form']`），**不是** Google 的 reCAPTCHA。SearXNG 是个"无 cookie、无 JS"的 HTTP 客户端，会被**间歇性**挑战。**没有配置开关能关** —— 逐个试过 UA、`Sec-Fetch` 头、`kl` 地区、关掉全局 Chrome TLS 伪装，样本一多还是被挑战（见附录）。实测最稳的替代是 `bing`（第 4 节） |
+| 日志里各引擎零星 `CAPTCHA`/`timeout`，结果时好时坏 | 元搜索的正常波动：一家被挡，别家照常返回。这就是 `unresponsive_engines` 存在的意义 —— 它列出的是**掉队的那几个**，不是失败 |
 | 端口被占用 | 改 `-e GRANIAN_PORT=8099` 并同步改客户端地址。**不要**用 `-p`——host 网络下它会被忽略 |
 | Cherry 连不上 | 地址缺 `http://`；或 flatpak 未共享网络 |
 | `opencode mcp list` 显示失败/超时 | 先手动跑 `npx -y mcp-searxng` 看能否启动；确认 `SEARXNG_URL` 可 curl；或改全局安装 + 绝对路径 |
@@ -534,12 +633,15 @@ systemctl --user restart searxng.service
 #   docker.io/searxng/searxng:2026.9.29-4e2c1ea7f
 
 # 备份：只需要这两样，缓存可丢
-#   settings.yml   （在 dotfiles 仓库里，跟着 git 走）
-#   searxng.env    （被 gitignore 的机密文件，记得单独备份！）
+#   settings.yml           （在 dotfiles 仓库里，跟着 git 走）
+#   searxng.container      （同上，也已经 stow 进 dotfiles）
+#   searxng.env            （被 gitignore 的机密文件，记得单独备份！）
 
 # 彻底卸载
 systemctl --user stop searxng.service
-rm ~/.config/containers/systemd/searxng.container   # Quadlet 定义
+rm ~/Dotfiles/matchaeggtart/config/containers/systemd/searxng.container  # Quadlet 定义（真文件在 dotfiles 里）
+rm ~/.config/containers/systemd                                          # 断掉 stow 留下的那条软链
+rmdir ~/.config/containers 2>/dev/null                                   # 里面没别的东西就一起删
 systemctl --user daemon-reload
 podman rm -f searxng
 podman volume rm searxng-cache
@@ -575,9 +677,9 @@ opencode mcp list                                       # 看 MCP 连接
 ## 附：SearXNG 到底用了哪些引擎
 
 SearXNG 是**元搜索**：一次查询同时发给很多引擎，再对结果去重、加权、合并。它**不是**只搜 Google。
-本机实例实测：**261 个引擎定义，82 个已启用**；网页类（`general`/`web`）默认启用的约有
-`brave`、`duckduckgo`、`google`、`wikipedia`、`wikidata`、`google cse` 等十几个。
-本配置只做了一件事：**把默认关闭的 `google` 打开**，外加摘掉两个需要 Tor 的引擎。
+本机实例实测：**261 个引擎定义，82 个已启用**；网页类（`general`/`web`）里默认启用的有
+`brave`、`duckduckgo`、`wikipedia`、`wikidata` 等十几个（剩下的默认状态见第 4 节那张三档表）。
+本配置做的事：**把默认关闭的 `google` 和 `bing` 打开**，外加摘掉两个需要 Tor 的引擎。
 
 查你实例的真实启用情况：
 
@@ -585,7 +687,38 @@ SearXNG 是**元搜索**：一次查询同时发给很多引擎，再对结果�
 curl -s http://127.0.0.1:8080/config | python3 -c 'import sys,json;d=json.load(sys.stdin);print(sorted({e["name"] for e in d["engines"] if e.get("enabled") and ({"general","web"} & set(e.get("categories",[])))}))'
 ```
 
-**只想走某一家**：查询里加 bang —— `!go`(google)、`!br`(brave)、`!ddg`(duckduckgo)、`!wp`(wikipedia)。
+**只想走某一家**：查询里加 bang —— `!go`(google)、`!br`(brave)、`!ddg`(duckduckgo)、`!wp`(wikipedia)、`!bi`(bing)。
+注意 `inactive` 引擎（如 `startpage`/`mojeek`）的 bang **既不生效也不报错**，你会静默拿到别的引擎的结果
+（第 4 节：先看 `results[].engine`）。
+
+### 本机实测：哪些引擎真的出得来结果（2026-10）
+
+出口是 VPN（hiddify）时，逐家实测的结果（不是推断）：
+
+| 类别 | 引擎 | 说明 |
+| --- | --- | --- |
+| ✅ 能出结果 | `google cse`、`bing`、`mwmbl`、`wiby`、`privacywall`、`resulthunter`、`quark`、`zapmeta` | `google cse` 默认开着；**`bing` 默认关着但实测能用，是性价比最高的补充**；后面几家是小众/聚合器，质量自己掂量 |
+| ❌ 被挡 | `google`(403)、`brave`(429)、`duckduckgo`(CAPTCHA)、`qwant`(CAPTCHA)、`yep`(403)、`sogou`(崩溃) | 见第 9 节：`google` 是**上游端点被 Google 封了**（换任何出口都没用）；其余是**客户端行为**触发的间歇性机器人判定 —— 同一条出口的原始请求能正常拿到结果，所以别急着怪出口 IP |
+
+### 一个走过弯路才排除的嫌疑人：Chrome TLS 伪装
+
+`searx/network/client.py` 里写着 `DEFAULT_IMPERSONATE = "chrome"` —— **SearXNG 默认给所有引擎请求套上 Chrome 的 TLS 指纹**（`google` 引擎则自己覆盖成 `chrome99_android`）。看起来很像"DDG 挑战 Chrome 指纹"的元凶，但：
+
+- 实测同样一组请求头，`impersonate="chrome"` 与不伪装**都能拿到 11 条结果**；
+- 这个值**在 `settings.yml` 里改不动** —— 试过给引擎加 `impersonate: "none"`，行为毫无变化。原因是
+  `searx/search/processors/abstract.py` 的 `get_params()` 只返回一个**固定字段集**，引擎级配置里的
+  `impersonate` 根本不会被读进 `params`；只有引擎模块自己在代码里写 `params["impersonate"] = ...` 才有效。
+
+结论：这条路是死胡同，别再试了。DDG 的挑战是**概率性**的（同一组参数连打，前几次成功、后面开始 202 challenge），
+换 UA / TLS / 地区都只是抖动，不是开关。
+| ⚠️ 注册了但返回 0 条 | `yahoo`、`yandex`、`seznam`、`mozhi`、`fastbot`、`searchmysite`、`boardreader`、`baidu`、`encyclosearch`、`vuhuv` | bang 是生效的，引擎就是没给结果 |
+| ⚠️ `inactive`：bang 被静默忽略 | `startpage`、`mojeek` | 见第 4 节 |
+
+**所以"怎么才不被挡"的答案**：配置层面**做不到**让 `google`/`brave`/`duckduckgo` 恢复 ——
+`google` 是上游端点被 Google 封了（和出口无关），`brave`/`duckduckgo`/`qwant` 是间歇性的机器人判定
+（**不是** IP 被拉黑，换出口未必有用）。现实的解法是**多开几家能用的**：把 `bing` 打开（第 4 节），
+普通搜索就从"只有 `google cse` 一个来源"变成两个 —— 本配置已经这么做了，实测
+`arch linux wayland` 一次返回 **30 条 = google cse 20 + bing 10**。
 
 **想让某家排前面**：在 `settings.yml` 的 `engines` 里给它 `weight`（默认 1.0）：
 
