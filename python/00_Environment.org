@@ -167,8 +167,11 @@ https://mirrors.aliyun.com/pytorch-wheels/cu130
 
 *** 现状
 
-未安装（~pacman -Q uv~ → not found，记于 2026-10-08）。
+已装（2026-10-08）：~uv 0.12.23-1~（pacman，extra）。
 再确认：~uv --version~
+
+本仓库的 Python 环境：~code/.venv~（Python 3.14.7，已被 ~.gitignore~ 忽略）。
+命令都在 ~code/~ 目录里跑——~uv pip~ 靠当前目录的 ~.venv~ 判断装到哪。
 
 ** PyTorch / CUDA
 
@@ -189,15 +192,22 @@ https://mirrors.aliyun.com/pytorch-wheels/cu130
 mkdir -p code && cd code
 uv venv --python 3.14
 uv pip install torch --index-url https://download.pytorch.org/whl/cu130
+uv pip install numpy          # torch 轮子不带 numpy，必须补（见下）
 #+end_src
 
-~--index-url~ 会把默认源**整个换成** PyTorch 源。实测该源里已带齐 torch 的依赖
-（numpy / sympy / networkx / jinja2 / filelock / fsspec / setuptools 都在），所以不必再配 PyPI。
+~--index-url~ 会把默认源**整个换成** PyTorch 源。实测该源带齐了 torch 的依赖
+（sympy / networkx / jinja2 / filelock / fsspec / typing-extensions / setuptools 都装上了），
+不必再配 PyPI。
+
+⚠️ 但 **numpy 不是 torch 的依赖**，不会自动装。缺了它 `import torch` 会警告
+~Failed to initialize NumPy~，而且 tensor ↔ 数组转换全都用不了。
 
 *** 现状
 
-未装。装完用这条确认 GPU 可用（期望看到版本号、~True~ 和显卡名）：
+已装（2026-10-08）：~torch 2.14.1+cu130~，29 个包（含 CUDA 13 运行时 / cuDNN / NCCL / triton，
+不需要系统 CUDA）。再确认：
 
 #+begin_src shell
 uv run python -c "import torch; print(torch.__version__, torch.cuda.is_available(), torch.cuda.get_device_name(0))"
+# 2.14.1+cu130 True NVIDIA GeForce RTX 5080 Laptop GPU
 #+end_src
