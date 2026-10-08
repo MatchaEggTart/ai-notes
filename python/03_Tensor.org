@@ -1,0 +1,149 @@
+#+title: Tensor
+#+date: <2026-10-08 Thu>
+#+author: MatchaEggTart
+#+email: matchaeggtart@hotmail.com
+
+* 张量(Tensor)
+
+** 张量是什么
+
+*** 概念
+
+张量 = 多维数组。torch 的 ~Tensor~ 相当于 numpy 的 ~ndarray~，但多了两个本事：
+**能放到 GPU 上算**、**能自动求导（autograd）**。
+
+对照着记：numpy 也会算矩阵，但它是「哑」的——不记谱、不求导、不上 GPU。
+torch 就是「会记账」的 numpy。
+
+*** 用法
+
+code/env_check.py
+
+#+begin_src python
+import torch
+
+a = torch.randn(4096, 4096, device="cuda")   # 在 GPU 上造一个 4096x4096
+b = torch.randn(4096, 4096, device="cuda")
+c = a @ b                                    # @ 是矩阵乘法
+print(c.shape, c.device)                     # torch.Size([4096, 4096]) cuda:0
+#+end_src
+
+*** 卡点
+
+**** 参数是「形状」，不是「范围」
+
+~torch.randn(4096, 4096)~ 里两个数字**不是取值范围，是维度**：造一个 4096×4096 的矩阵。
+看到数字先问一句：这是**值**，还是**维度**？
+
+**** 不写 device 默认在 CPU 上
+
+实测：~torch.randn(3).device~ → ~cpu~；~torch.randn(3).device~ 加 ~device="cuda"~ → ~cuda:0~。
+搬来搬去用 ~x.to("cuda")~ / ~x.cpu()~。
+（CPU 和 GPU 的张量不能直接混合运算，会报错——这是新手最常见的报错之一。）
+
+**** CUDA 轮子不自带 numpy
+
+装完 torch 后 ~torch.cuda.is_available()~ 就是 ~True~，但 ~import torch~ 一直在**偷偷警告**
+~Failed to initialize NumPy~——因为 numpy 不是 torch 的依赖，不会被自动装。
+补：~uv pip install numpy~。详见 [[file:00_Environment.org][Environment]]。
+
+** 随机数：rand / randn / randint
+
+*** 概念
+
+~randn~ = ~rand~ + **n**（normal），即**标准正态分布** N(0, 1) 的随机数。
+
+*** 用法
+
+#+begin_src python
+import torch
+
+torch.manual_seed(42)              # 固定随机种子
+print(torch.rand(3))               # 均匀分布 [0, 1)
+print(torch.randn(3))              # 正态分布 N(0, 1)
+print(torch.randint(0, 10, (3,)))  # 随机整数
+#+end_src
+
+实测：
+
+#+begin_src python
+torch.manual_seed(42); a = torch.rand(3)
+torch.manual_seed(42); b = torch.rand(3)
+torch.equal(a, b)      # True —— 同种子结果一致
+#+end_src
+
+*** 卡点
+
+**** rand 和 randn 差一个字母，分布完全不同
+
+- ~torch.rand(...)~    → 均匀分布 ~[0, 1)~
+- ~torch.randn(...)~   → 正态分布 ~N(0, 1)~（n = normal）
+- ~torch.randint(...)~ → 随机整数
+
+**** 随机数可以复现
+
+~torch.manual_seed(42)~ 之后随机序列固定（实测两次 ~rand(3)~ 完全相同）。
+调试和复现实验必备。
+
+*** 验证
+
+(1) ~torch.randn(2, 3)~ 造出来的是几个数？形状是什么？（实测：6 个，~(2, 3)~）
+(2) 想造一个「每个元素在 0~1 之间均匀分布」的 3×3 矩阵，用哪个函数？
+
+** 异步执行与 synchronize
+
+*** 概念
+
+CPU 和 GPU 是**异步**的：GPU 任务通过**队列**提交，CPU 把活儿丢进队列就立刻返回，
+不等它算完。
+
+~torch.cuda.synchronize()~ = 停下 CPU，等 GPU 把队列里所有任务做完（同步屏障）。
+
+*** 用法
+
+#+begin_src python
+import time, torch
+
+a = torch.randn(4096, 4096, device="cuda")
+b = torch.randn(4096, 4096, device="cuda")
+for _ in range(10):          # 预热：首次调用含 cuBLAS 初始化，数字不准
+    c = a @ b
+torch.cuda.synchronize()
+
+t0 = time.perf_counter()
+c = a @ b
+t1 = time.perf_counter()     # 只测到「把任务排进队列」
+torch.cuda.synchronize()
+t2 = time.perf_counter()     # 等到 GPU 真算完
+print(t1 - t0, t2 - t1)
+#+end_src
+
+*** 卡点
+
+**** synchronize 不是「刷新」
+
+直觉以为是刷新显示 → 其实是**等待**：CPU 阻塞，直到 GPU 队列清空。
+
+**** 不 synchronize 就计时 = 只测到了排队时间
+
+实测对照：
+
+| 测法 | 时间 |
+| --- | --- |
+| 只排队（不等 GPU） | 0.000024 s |
+| GPU 实际计算 | 8.78 ms |
+
+差 **366 倍**。有人因此得出「显卡 0.02 毫秒算完 4096³ 矩阵乘」这种荒谬结论。
+**要计时，先 ~synchronize()~。**
+
+**** 首次调用的数字不算数
+
+第一次 ~a @ b~ 含 cuBLAS 初始化与算法选择，明显偏慢（实测首测 75 ms vs 预热后 8.8 ms）。
+测性能前先跑几轮预热。
+
+*** 验证
+
+(1) 下面哪段在测「GPU 的计算时间」？为什么？
+    A. ~c = a @ b; t1 = time.perf_counter()~
+    B. ~c = a @ b; torch.cuda.synchronize(); t1 = time.perf_counter()~
+(2) 为什么第一次 ~a @ b~ 比后面慢很多？
