@@ -10,7 +10,7 @@ AI 相关的学习笔记与资料整理。
 | `python/` | Python 学习笔记与练习 |
 | `install/` | 环境 / 服务安装脚本 |
 | `papers/` | 论文阅读笔记（计划） |
-| `code/` | 练习代码、demo、notebook（计划） |
+| `code/` | 练习代码、demo、notebook（Python 环境在 `code/.venv`） |
 | `assets/` | 图片等附件（计划） |
 
 ## 写作约定
