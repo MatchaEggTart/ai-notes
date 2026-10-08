@@ -211,3 +211,6 @@ uv pip install numpy          # torch 轮子不带 numpy，必须补（见下）
 uv run python -c "import torch; print(torch.__version__, torch.cuda.is_available(), torch.cuda.get_device_name(0))"
 # 2.14.1+cu130 True NVIDIA GeForce RTX 5080 Laptop GPU
 #+end_src
+
+实测不只是 `is_available`，是真能算：4096×4096 矩阵乘在 GPU 上跑通，
+算力 ~sm_120~，可用显存 15.6 GB（标称 16 GB）。
