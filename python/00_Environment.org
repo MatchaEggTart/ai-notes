@@ -122,18 +122,22 @@ ruff check .       # lint
 
 *** 结论
 
-项目环境优先用 uv（一个工具顶 pip + pipx + venv + pyenv）。
+项目环境优先用 uv（一个工具顶 pip + pipx + venv + pyenv）。用 pacman 装。
+**不用配镜像**（见下）。
+
+*** 为什么
+
+- uv 官方明确**不读** pip 的配置（~pip.conf~ / ~PIP_INDEX_URL~），
+  所以本机 pip 的清华源对 uv **无效**；uv 自己的配置在 ~$HOME/.config/uv/uv.toml~。
+- 实测直连 ~download.pytorch.org~ 约 **7 MB/s**，torch 轮子 1–2 GB 几分钟下完，不值得折腾镜像。
 
 *** 命令
 
-安装（二选一）：
+安装：
 
 #+begin_src shell
-# 推荐：仓库包（要 sudo 密码）
+# 仓库包（extra）。装成 pacman 包后 uv self update 会拒绝自我更新，升级统一走 pacman -Syu
 sudo pacman -S uv
-
-# 或者：官方脚本，装到 ~/.local/bin，不用 sudo
-curl -LsSf https://astral.sh/uv/install.sh | sh
 #+end_src
 
 建环境 + 装依赖：
@@ -143,6 +147,22 @@ uv venv --python 3.14       # 建虚拟环境
 uv pip install 包           # 装依赖
 uv run python xxx.py        # 在环境里跑
 uv tool install ruff        # 相当于 pipx install
+#+end_src
+
+镜像（先别配；真慢再加）：
+
+#+begin_src toml
+# ~/.config/uv/uv.toml
+[[index]]
+url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+default = true
+#+end_src
+
+PyTorch 轮子的国内镜像（实测可用的只有这两个；清华、BFSU 都是 404）：
+
+#+begin_src shell
+https://mirror.sjtu.edu.cn/pytorch-wheels/cu130
+https://mirrors.aliyun.com/pytorch-wheels/cu130
 #+end_src
 
 *** 现状
@@ -170,6 +190,9 @@ mkdir -p code && cd code
 uv venv --python 3.14
 uv pip install torch --index-url https://download.pytorch.org/whl/cu130
 #+end_src
+
+~--index-url~ 会把默认源**整个换成** PyTorch 源。实测该源里已带齐 torch 的依赖
+（numpy / sympy / networkx / jinja2 / filelock / fsspec / setuptools 都在），所以不必再配 PyPI。
 
 *** 现状
 
