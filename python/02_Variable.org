@@ -41,7 +41,7 @@ Python 中可以处理任意大小的整数，而且支持二进制（如0b100�
 
 *** HOW
 
-varialbeType.py
+variable_type.py
 
 #+begin_src python
 # 整数
@@ -67,6 +67,40 @@ print(True)
 
 ** 变量命名规则
 
-*** 
+*** 规则部分
+
+(1)  变量名由字母、数字和下划线构成，数字不能开头
+(2)   Python 是大小写敏感的编程语言
+(3)  变量名不要跟 Python 的关键字重名，尽可能避开 Python 的保留字
+
+*** 惯例
+
+(1) 变量名通常使用小写英文字母，多个单词用下划线进行连接
+(2) 受保护的变量用单个下划线开头
+(3) 私有的变量用两个下划线开头
+
+** 变量的使用
+
+*** HOW
+
+variable_use.py
+
+#+begin_src python
+"""
+使用变量保存数据并进行加减乘除运算
+
+Version: 1.0
+Author: 骆昊
+"""
+a = 45        # 定义变量a，赋值45
+b = 12        # 定义变量b，赋值12
+print(a, b)   # 45 12
+print(a + b)  # 57
+print(a - b)  # 33
+print(a * b)  # 540
+print(a / b)  # 3.75
+#+end_src
+
+** Type
 
 *** WHAT
