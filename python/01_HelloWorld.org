@@ -5,47 +5,80 @@
 
 * Hello, World
 
+写法见 [[file:../docs/ai-roadmap.md][笔记规范]]：概念用自己的话；卡点写成「我以为 X → 其实 Y」，且 Y 是**跑出来**的，不是推断的。
 
-** 默认的交互式环境
+** 交互式环境(REPL)
 
-*** HOW
+*** 概念
+
+`>>>` 是解释器的交互模式（REPL，读-求值-打印-循环）。敲一行、立刻求值并打印。
+写正式程序不用它，拿它试验语法最快。
+
+*** 用法
 
 #+begin_src python
+>>> 1 + 1
+2
 >>> print("Hello, World")
 Hello, World
 >>> quit()
 #+end_src
 
+*** 卡点
 
-** 文本编译
+(1) 我以为 `quit()` 是 Python 的语法 → 其实是解释器启动时由 `site` 模块加进内置命名空间的命令。
+    - 实测 `python3 -c 'quit()'` 能退出；
+    - 实测 `python3 -S -c 'quit()'` 报 `NameError: name 'quit' is not defined`（`-S` = 不加载 site）。
+    结论：它不是语言的一部分，是「环境给的」。
 
-*** HOW
+** 运行脚本
 
-helloWorld.py
+*** 概念
+
+把代码写进 `.py`，交给解释器执行——这才是写程序；交互式只用来试验。
+
+*** 用法
+
+hello_world.py
 
 #+begin_src python
 print("Hello, World")
 print("Goodbye, World")
 #+end_src
 
-
-** 注释(comment)
-
-*** HOW
-
-- 单行注释：以#和空格开头，可以注释掉从#开始后面一整行的内容
-
-- 多行注释：三个引号（通常用双引号）开头，三个引号结尾，通常用于添加多行说明性内容
-
- comment.py
-  
-#+begin_src python
-"""
-第一个Python程序 - hello, world
-
-Version: 1.0
-Author: MatchaEggTart
-"""
-# print('hello, world')
-print("你好，世界！")
+#+begin_src shell
+python3 hello_world.py
 #+end_src
+
+*** 卡点
+
+(1) 原教程把这一步叫「文本编译」→ 措辞不准。Python 是解释执行，没有独立的编译步骤
+    （内部会先编译成字节码，但对使用者透明）。准确说法是「运行脚本」。
+
+** 注释
+
+*** 概念
+
+`#` 之后到行尾的内容被忽略。
+
+*** 用法
+
+hello_world.py
+
+#+begin_src python
+# 下面这行被注释掉了，不会执行
+# print("这一行不会打印")
+#+end_src
+
+*** 卡点
+
+(1) 我以为三引号 `"""..."""` 是「多行注释」→ 其实它是一个**字符串**。
+    - 实测：`type("""abc""")` 返回 `<class 'str'>`；
+    - 它看着像注释，是因为这个字符串既没赋值也没被使用，解释器算完就丢；
+    - 只有作为文件/函数的第一个语句时，它才叫 docstring。
+    所以要「注释掉一段」，正统做法是每行加 `#`；三引号只是习惯用法，不是注释语法。
+
+*** 验证
+
+(1) `"""abc"""` 和 `# abc` 在语言层面分别是什么？
+(2) 想在一个 `.py` 里「打印完就结束」，需要写 `quit()` 吗？为什么？
