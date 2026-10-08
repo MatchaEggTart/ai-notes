@@ -83,8 +83,9 @@
 ### 阶段 0 —— 适配(约 1 周)
 
 - **Python 迁移**:缩进、推导式、切片、`with`、`*args / **kwargs`、dunder 表;
-- **环境**:`uv` + Python 3.12 / 3.13 的 venv + PyTorch (CUDA)
-  - ⚠️ 本机 Python 是 3.14,ML 生态通常滞后,**大概率要另建 3.12 / 3.13 环境**,到时现验;
+- **环境**:`uv` + Python 3.14 的 venv + PyTorch (CUDA)
+  - ✅ 已验:PyTorch 2.14.1 提供 `cp314` 轮子,**直接用 Python 3.14**,不必另建 3.12/3.13
+  - 装法与验证见 [python/00_Environment.org](../python/00_Environment.org);
 - **数学**:见上节,2–4 天。
 
 ### 阶段 1 —— 反向传播(2–4 周)

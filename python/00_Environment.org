@@ -122,24 +122,59 @@ ruff check .       # lint
 
 *** 结论
 
-项目环境优先用 uv（一个工具顶 pip + pipx + venv + pyenv）。**尚未安装**，阶段 0 装。
-
-*** 为什么
-
-见 [[file:../docs/ai-roadmap.md][路线 · 阶段 0]]。注意：本机 Python 是 3.14，
-ML 生态（尤其 PyTorch）通常滞后，**大概率要另建一个 3.12 / 3.13 的 venv**，到时现验。
+项目环境优先用 uv（一个工具顶 pip + pipx + venv + pyenv）。
 
 *** 命令
 
+安装（二选一）：
+
 #+begin_src shell
+# 推荐：仓库包（要 sudo 密码）
 sudo pacman -S uv
-uv venv                    # 建虚拟环境
-uv pip install 包          # 装依赖
-uv run python xxx.py       # 在环境里跑
-uv tool install ruff       # 相当于 pipx install
+
+# 或者：官方脚本，装到 ~/.local/bin，不用 sudo
+curl -LsSf https://astral.sh/uv/install.sh | sh
+#+end_src
+
+建环境 + 装依赖：
+
+#+begin_src shell
+uv venv --python 3.14       # 建虚拟环境
+uv pip install 包           # 装依赖
+uv run python xxx.py        # 在环境里跑
+uv tool install ruff        # 相当于 pipx install
 #+end_src
 
 *** 现状
 
-未安装（~pacman -Q uv~ → not found）。
-再确认：~pacman -Q uv~
+未安装（~pacman -Q uv~ → not found，记于 2026-10-08）。
+再确认：~uv --version~
+
+** PyTorch / CUDA
+
+*** 结论
+
+本机能直接跑 GPU 版 PyTorch，用 **Python 3.14** 即可，**不需要**另建 3.12 / 3.13。
+
+*** 为什么
+
+- 显卡 RTX 5080 Laptop，16 GB 显存（sm_120 / Blackwell）；
+- 驱动 NVIDIA 615.71.09，支持到 CUDA 13.4；
+- 实测 PyTorch **2.14.1 已提供 ~cp314~ 轮子**，官方 ~cu130~ 源里也有 cp314 版本。
+  此前担心的「3.14 没轮子」已被推翻（2026-10-08 实测）。
+
+*** 命令
+
+#+begin_src shell
+mkdir -p code && cd code
+uv venv --python 3.14
+uv pip install torch --index-url https://download.pytorch.org/whl/cu130
+#+end_src
+
+*** 现状
+
+未装。装完用这条确认 GPU 可用（期望看到版本号、~True~ 和显卡名）：
+
+#+begin_src shell
+uv run python -c "import torch; print(torch.__version__, torch.cuda.is_available(), torch.cuda.get_device_name(0))"
+#+end_src
