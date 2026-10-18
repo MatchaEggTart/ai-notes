@@ -550,12 +550,13 @@ opencode mcp list                 # 第一次可能显示 No MCP servers configu
 进 TUI 后也可以用 `/mcps` 查看连接状态、连接/断开服务器。
 
 > 如果 `npx` 方式一直超时：改成全局预装再指向绝对路径，避免每次冷启动。
+> 反过来，如果报的是 `exited with code 1`（npx 缓存坏），见第 9 节「npx 缓存损坏」—— 一条 `rm -rf` 就能修，不必为此换全局装。
 
 ```bash
 npm install -g mcp-searxng
 ```
 
-> 然后把 `command` 换成全局 bin 的绝对路径（你的 nvm 前缀是 `~/.nvm/versions/node/v24.21.0/bin/mcp-searxng`）。
+> 然后把 `command` 换成全局 bin 的绝对路径（你的 nvm 前缀是 `~/.nvm/versions/node/v24.22.0/bin/mcp-searxng`）。
 > 注意：nvm 的路径带 Node 版本号，将来升级 Node 后要回来改。
 >
 > **opencode 不会在 SearXNG 和别的服务商之间自动故障转移。** 内置 `websearch` 的「自动换一家」只在它
@@ -612,6 +613,7 @@ npm install -g mcp-searxng
 | 端口被占用 | 改 `-e GRANIAN_PORT=8099` 并同步改客户端地址。**不要**用 `-p`——host 网络下它会被忽略 |
 | Cherry 连不上 | 地址缺 `http://`；或 flatpak 未共享网络 |
 | `opencode mcp list` 显示失败/超时 | 先手动跑 `npx -y mcp-searxng` 看能否启动；确认 `SEARXNG_URL` 可 curl；或改全局安装 + 绝对路径 |
+| `MCP server process exited with code 1`，栈里全是 `~/.npm/_npx/<hash>/node_modules/...`，首行被截断成 `arser/lib/read.js` 这种半截路径 | **npx 缓存半截安装**：依赖目录在、但缺 `package.json`，npm 见目录已存在就跳过解包 → 永远不自愈。手动跑 `npx -y mcp-searxng` 看真因（多半是 `Cannot find module '<某依赖>'`）→ `rm -rf ~/.npm/_npx` 重跑 → `opencode service restart`。详见本节末「npx 缓存损坏」 |
 
 看日志、进容器排查：
 
@@ -619,6 +621,57 @@ npm install -g mcp-searxng
 podman logs -f searxng
 podman exec -it --user root searxng /bin/sh -l
 ```
+
+### npx 缓存损坏：`MCP server process exited with code 1`（2026-10 实测）
+
+**症状**：`opencode mcp list` 或 `opencode api get /api/mcp` 显示
+
+```text
+✗ searxng  failed: Connection closed: MCP server process exited with code 1: arser/lib/read.js
+- /home/<user>/.npm/_npx/<hash>/node_modules/body-parser/lib/types/json.js
+- /home/<user>/.npm/_npx/<hash>/node_modules/body-parser/index.js
+- /home/<user>/.npm/_npx/<hash>/node_modules/express/lib/express.js
+    at Module._resolveFilename (node:internal/modules/cjs/loader:1564:15)
+```
+
+SearXNG 容器、`settings.yml`、`SEARXNG_URL` 全都可能没问题 —— 这是 **MCP 那个 Node 进程自己起不来**。
+
+**两件容易看错的事**：
+
+1. **首行被 opencode 截断了。** 那段 `arser/lib/read.js` 是 require 栈里 `body-parser/lib/read.js` 的尾巴，真正的原因行被切掉了。手动跑一次就能看到真话：
+
+   ```bash
+   echo '' | SEARXNG_URL=http://127.0.0.1:8080 npx -y mcp-searxng
+   # Failed to start server: Error: Cannot find module 'iconv-lite'
+   ```
+
+   `echo ''` 只是喂一个 EOF 让它退出，否则它会一直等 stdin。**正常启动**的表现为只打印一行 `SearXNG URLs: http://127.0.0.1:8080/` 然后等着 —— 那不是卡死。
+
+2. **`_npx/<hash>` 是 npx 的临时安装目录**，不是你手动装的。`npx -y mcp-searxng` 由 opencode 按 `opencode.jsonc` 里 `mcp.servers.searxng.command` 拉起，每个目录首次连接 MCP 时都会冷启动一遍。
+
+**根因**：依赖**目录在、但没装完**（实测缺的是 `iconv-lite/package.json`，目录里只剩 `lib/` + `encodings/` + `LICENSE`）—— 多半是某次 npx 安装被打断（网络断、Ctrl+C）。而 npm 看到目录已存在就**跳过解包**，所以这个洞**不会自愈**。两个佐证：
+
+- `package-lock.json` 里那条是空对象 `"node_modules/iconv-lite": {}`（没有 `version`）；
+- `npm ls iconv-lite` 报 `invalid`。
+
+**处理（实测有效）**：
+
+```bash
+rm -rf ~/.npm/_npx          # 全清最省事；也可只删报错栈里那个 <hash>
+npx -y mcp-searxng          # 能打印 SearXNG URLs 就说明依赖齐了
+cd ~/.npm/_npx/<hash> && npm ls iconv-lite   # 应显示具体版本号（如 0.7.3），不再是 invalid
+opencode service restart    # 关键：失败状态被后台服务缓存着，不重启不会自己重连
+```
+
+不依赖 opencode 文案的验证方式（手工走一次 MCP 握手）：
+
+```bash
+printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"probe","version":"0"}}}' \
+  | SEARXNG_URL=http://127.0.0.1:8080 npx -y mcp-searxng
+# 应返回 serverInfo：ihor-sokoliuk/mcp-searxng 2.6.0
+```
+
+> **想根治就别用 npx**：`npm i -g mcp-searxng`，`command` 填绝对路径（§8.2 末尾）。代价是失去「每次自动取 latest」。本文目前**有意留在 npx**：跟新版本更重要，坏了就靠这一条修 —— 修起来只有一条 `rm -rf`。
 
 ---
 
