@@ -150,6 +150,12 @@ server:
   image_proxy: false
   public_instance: false  # 不要开：那是给公开实例防滥用的
 
+outgoing:
+  # 本机实测（2026-10）：出口是 VPN，TLS 握手 1.2–6.5s、单请求总耗时 1.9–8.2s，
+  # 而默认 request_timeout 只有 3.0s → bing / wikipedia / wikidata 常态 Timeout。
+  request_timeout: 6.0
+  max_request_timeout: 15.0
+
 # 默认配置里 `google` 和 `bing` 都是 `disabled: true`。
 # 指定同一 name 时，SearXNG 会按 name 合并覆盖，所以这里只写需要改的字段。
 engines:
@@ -160,6 +166,11 @@ engines:
   # 少了它，普通搜索就只剩 google cse 一个来源（见附录「哪些引擎真的出得来结果」）。
   - name: bing
     disabled: false
+  # wikipedia 走的是 REST v1 summary 端点（/api/rest_v1/page/summary/…），
+  # 不是网页 /wiki/、也不是 /w/api.php —— 三条路配额不同，只有它常态 429（见第 9 节）。
+  # 它只产出摘要信息框、不进搜索结果列表，关掉后结果数不变。没有删任何默认定义。
+  - name: wikipedia
+    disabled: true
 ```
 
 四个「为什么」：
@@ -360,7 +371,22 @@ curl -sG 'http://127.0.0.1:8080/search' \
 >  | python3 -c 'import sys,json;d=json.load(sys.stdin);print("结果数:",len(d["results"]));print("掉线引擎:",d.get("unresponsive_engines"))'
 > ```
 >
-> 有结果 + 有掉线引擎 = 正常；0 结果且全是 timeout = 代理没通。
+> 有结果 + 有掉线引擎 = 正常；0 结果且全是 timeout **有两种可能**，别直接归因到代理：
+>
+> 1. 代理真的不通；
+> 2. **超时预算比线路实际延迟还紧**（实测踩过：VPN 出口 TLS 握手 1.2–6.5s、
+>    单请求总耗时 1.9–8.2s，而默认 `request_timeout` 只有 3.0s → bing 常态 Timeout，
+>    只剩 google cse 一家，并发时连它也会掉 → 0 结果，但代理其实完好）。
+>
+> **判别方法**：用同一条代理直连同一目标，看能不能通、要多久：
+>
+> ```bash
+> curl -s -x http://127.0.0.1:1080 -o /dev/null -m 15 \
+>   -w 'code=%{http_code} tls=%{time_appconnect}s total=%{time_total}s\n' https://www.bing.com/
+> ```
+>
+> 通了就是 (2)，把 `settings.yml` 里的 `outgoing.request_timeout` 放宽（第 4 节）。
+> 另外：`unresponsive_engines` 里的 `timeout` **不等于**引擎拒绝 —— 见第 9 节「429 / CAPTCHA」那条。
 > （刚 `restart` 完的**第一条**查询可能因为冷启动整批 timeout —— 再查一次再下结论。）
 
 ---
@@ -571,7 +597,7 @@ npm install -g mcp-searxng
 >  | python3 -c 'import sys,json;d=json.load(sys.stdin);print("结果数:",len(d["results"]));print("掉线引擎:",d.get("unresponsive_engines"))'
 > ```
 >
-> 有结果但有掉线引擎 = 正常；0 结果且全是 timeout = 代理问题。
+> 有结果但有掉线引擎 = 正常；0 结果且全是 timeout 见第 6 节「有两种可能」，**别默认是代理问题**。
 
 ### 8.3（可选）顺手告诉技能：优先用它
 
@@ -610,6 +636,9 @@ npm install -g mcp-searxng
 | `!go` 恒为 0 条、`unresponsive_engines` 里 `google: access denied` | **上游 SearXNG 的问题，不是你的配置、也不是你的 IP**：这版 `google` 引擎走 `https://www.google.com/wml/search`（Nokia 功能机 WML 界面），Google 已封该端点。实测同一条代理下 `/wml/search` → 403、普通 `/search` → 200。配置层面无解 —— 等上游修（镜像 `latest` 现在就是最新的 `2026.10.4`，先 `podman pull` 试试有没有新版本），日常用 `google cse` 顶（第 6 节 c） |
 | `brave: too many requests` / `duckduckgo: CAPTCHA` / `qwant: CAPTCHA` | 这些是**客户端行为触发的机器人判定，不是 IP 被拉黑**：实测同一条出口用普通 HTTP 请求能从 DDG 拿到 **11 条真结果**（附录）。DDG 报的 `CAPTCHA` 是 DDG **自己的** `challenge-form` 图灵测试（`searx/engines/duckduckgo.py` 的 `is_ddg_captcha()` 就是找 `//form[@id='challenge-form']`），**不是** Google 的 reCAPTCHA。SearXNG 是个"无 cookie、无 JS"的 HTTP 客户端，会被**间歇性**挑战。**没有配置开关能关** —— 逐个试过 UA、`Sec-Fetch` 头、`kl` 地区、关掉全局 Chrome TLS 伪装，样本一多还是被挑战（见附录）。实测最稳的替代是 `bing`（第 4 节） |
 | 日志里各引擎零星 `CAPTCHA`/`timeout`，结果时好时坏 | 元搜索的正常波动：一家被挡，别家照常返回。这就是 `unresponsive_engines` 存在的意义 —— 它列出的是**掉队的那几个**，不是失败 |
+| `unresponsive_engines` 里写着 `timeout`，但代理明明能用 | `timeout` 是**有歧义**的标签，别当结论。看日志里的**异常类型**：`curl_cffi...Timeout` = 网络慢（调 `request_timeout`）；`SearxEngineTooManyRequestsException` / `429` = 被限流；`CAPTCHA` = 机器人判定；`403 access denied` = 端点被封。**后三种加超时完全无效** |
+| `wikipedia: too many requests`，但浏览器打开维基一切正常 | **同一个站的不同端点配额不同**：浏览器走 `/wiki/` 网页、`/w/api.php` 是 Action API、而 SearXNG 的 wikipedia 引擎走 **`/api/rest_v1/page/summary/`**（REST API），只有这条对匿名流量卡得最死。引擎代码写死了这个端点（`searx/engines/wikipedia.py` 的 `request()`），配置层改不了 → 已默认 `disabled: true`。且它只出信息框、不进结果列表，关掉不影响结果数 |
+| 短时间连打十几次某个引擎后，它开始恒 429 | 是按 IP 的**短窗口配额**，几分钟自愈。但**诊断时连打会自己制造症状** —— 已在本文踩过：同端点前 10 次 200，第 11 次起 429 |
 | 端口被占用 | 改 `-e GRANIAN_PORT=8099` 并同步改客户端地址。**不要**用 `-p`——host 网络下它会被忽略 |
 | Cherry 连不上 | 地址缺 `http://`；或 flatpak 未共享网络 |
 | `opencode mcp list` 显示失败/超时 | 先手动跑 `npx -y mcp-searxng` 看能否启动；确认 `SEARXNG_URL` 可 curl；或改全局安装 + 绝对路径 |

@@ -6,6 +6,10 @@ AI 相关的学习笔记与资料整理。
 
 | 路径 | 内容 |
 | --- | --- |
+| `MISSION.md` | 一屏罗盘：为什么学、成功标准、不碰什么 |
+| `AGENTS.md` | 写作约定（opencode 自动加载） |
+| `RESOURCES.md` | 可信来源清单（计划） |
+| `learning-records/` | 能力状态记录，驱动下一课（计划） |
 | `docs/` | 成篇的笔记、教程整理、路线文档 |
 | `python/` | Python 学习笔记与练习 |
 | `install/` | 环境 / 服务安装脚本 |
@@ -22,5 +26,6 @@ AI 相关的学习笔记与资料整理。
 
 ## 路线与术语
 
-- [AI 学习路线](docs/ai-roadmap.md)
+- [学习目标](MISSION.md) —— 一屏罗盘，教学决策以它为准
+- [AI 学习路线](docs/ai-roadmap.md) —— 详细阶段与验收标准
 - [术语表](GLOSSARY.md) —— 全仓库术语以它为准
